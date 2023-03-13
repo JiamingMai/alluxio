@@ -339,6 +339,80 @@ public final class BufferUtils {
   }
 
   /**
+   * Checks if the given byte array has a sub array equals an increasing sequence of bytes,
+   * starting from 0.
+   *
+   * @param startIndex the start index in the array to check against
+   * @param endIndex the end index in the array to check against
+   * @param arr the byte array to check
+   * @return true if match, false otherwise
+   */
+  public static boolean matchIncreasingByteArray(int startIndex, int endIndex, byte[] arr) {
+    return matchIncreasingByteArray(0, startIndex, endIndex, arr);
+  }
+
+  /**
+   * Checks if the given byte array has a sub array equals an increasing sequence of bytes,
+   * starting from the given value.
+   *
+   * @param startNum the starting value to use
+   * @param startIndex the start index in the array to check against
+   * @param endIndex the end index in the array to check against
+   * @param arr the byte array to check
+   * @return true if match, false otherwise
+   */
+  public static boolean matchIncreasingByteArray(
+      int startNum, int startIndex, int endIndex, byte[] arr) {
+    if (arr == null) {
+      return false;
+    }
+    for (int k = startIndex; k < endIndex; k++) {
+      if (arr[k] != (byte) (startNum + k)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Checks if the given byte buffer has a sub buffer equals an increasing sequence of bytes,
+   * starting from the given value.
+   *
+   * @param startIndex the start index in the array to check against
+   * @param endIndex the end index in the array to check against
+   * @param buf the byte buffer to check
+   * @return true if match, false otherwise
+   */
+  public static boolean matchIncreasingByteBuffer(int startIndex, int endIndex, ByteBuffer buf) {
+    return matchIncreasingByteBuffer(0, startIndex, endIndex, buf);
+  }
+
+  /**
+   * Checks if the given byte buffer has a sub buffer equals an increasing sequence of bytes,
+   * starting from the given value.
+   *
+   * @param startNum the starting value to use
+   * @param startIndex the start index in the array to check against
+   * @param endIndex the end index in the array to check against
+   * @param buf the byte buffer to check
+   * @return true if match, false otherwise
+   */
+  public static boolean matchIncreasingByteBuffer(
+      int startNum, int startIndex, int endIndex, ByteBuffer buf) {
+    if (buf == null) {
+      return false;
+    }
+    buf.rewind();
+    buf.position(startIndex);
+    for (int k = 0; k < endIndex - startIndex; k++) {
+      if (buf.get() != (byte) (startNum + k)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Writes buffer to the given file path.
    *
    * @param path file path to write the data
@@ -431,4 +505,28 @@ public final class BufferUtils {
   }
 
   private BufferUtils() {} // prevent instantiation
+
+  /**
+   * An efficient copy between two channels with a fixed-size buffer.
+   *
+   * @param src the source channel
+   * @param dest the destination channel
+   */
+  public static void fastCopy(final ReadableByteChannel src, final WritableByteChannel dest)
+      throws IOException {
+    // TODO(JiamingMai): make the buffer size configurable
+    final ByteBuffer buffer = ByteBuffer.allocateDirect(16 * 1024);
+
+    while (src.read(buffer) != -1) {
+      buffer.flip();
+      dest.write(buffer);
+      buffer.compact();
+    }
+
+    buffer.flip();
+
+    while (buffer.hasRemaining()) {
+      dest.write(buffer);
+    }
+  }
 }

@@ -80,8 +80,10 @@ public class FileSystemOptions {
      */
     public static Builder create(AlluxioConfiguration conf) {
       return new Builder()
-          .setMetadataCacheEnabled(conf.getBoolean(PropertyKey.USER_METADATA_CACHE_ENABLED))
-          .setDataCacheEnabled(conf.getBoolean(PropertyKey.USER_CLIENT_CACHE_ENABLED));
+          .setMetadataCacheEnabled(
+              conf.getBoolean(PropertyKey.USER_CLIENT_CACHE_ENABLED))
+          .setDataCacheEnabled(
+              conf.getBoolean(PropertyKey.DORA_CLIENT_READ_LOCATION_POLICY_ENABLED));
     }
 
     /**
