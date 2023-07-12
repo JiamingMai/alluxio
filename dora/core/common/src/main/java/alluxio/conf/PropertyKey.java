@@ -7759,6 +7759,14 @@ public final class PropertyKey implements Comparable<PropertyKey> {
           .setScope(Scope.WORKER)
           .build();
 
+  public static final PropertyKey WORKER_HTTP_SERVER_ZEROCOPY_ENABLED =
+      booleanBuilder(Name.WORKER_HTTP_SERVER_ZEROCOPY_ENABLED)
+          .setDefaultValue(true)
+          .setDescription("Whether to enable zero-copy feature in worker HTTP server.")
+          .setConsistencyCheckLevel(ConsistencyCheckLevel.ENFORCE)
+          .setScope(Scope.WORKER)
+          .build();
+
   public static final PropertyKey WORKER_HTTP_SERVER_PORT =
       intBuilder(Name.WORKER_HTTP_SERVER_PORT)
           .setDefaultValue(28080)
@@ -9554,6 +9562,9 @@ public final class PropertyKey implements Comparable<PropertyKey> {
 
     public static final String WORKER_HTTP_SERVER_ENABLED =
         "alluxio.worker.http.server.enabled";
+
+    public static final String WORKER_HTTP_SERVER_ZEROCOPY_ENABLED =
+        "alluxio.worker.http.server.zerocopy.enabled";
 
     public static final String WORKER_HTTP_SERVER_PORT =
         "alluxio.worker.http.server.port";

@@ -25,13 +25,16 @@ import alluxio.client.file.FileSystem;
 import alluxio.client.file.FileSystemContext;
 import alluxio.client.file.URIStatus;
 import alluxio.conf.Configuration;
+import alluxio.conf.PropertyKey;
 import alluxio.exception.AlluxioException;
 import alluxio.exception.PageNotFoundException;
 import alluxio.grpc.ListStatusPOptions;
 import alluxio.util.FileSystemOptionsUtils;
 
 import com.google.gson.Gson;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
@@ -63,6 +66,9 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<HttpObject> {
 
   private final PagedService mPagedService;
 
+  private final boolean mUseZeroCopy =
+      Configuration.global().getBoolean(PropertyKey.WORKER_HTTP_SERVER_ZEROCOPY_ENABLED);
+
   /**
    * {@link HttpServerHandler} deals with HTTP requests received from Netty Channel.
    * @param pagedService the {@link PagedService} object provides page related RESTful API
@@ -80,7 +86,7 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<HttpObject> {
   public void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws PageNotFoundException {
     if (msg instanceof HttpRequest) {
       HttpRequest req = (HttpRequest) msg;
-      HttpResponseContext responseContext = dispatch(req);
+      HttpResponseContext responseContext = dispatch(req, ctx.channel());
       HttpResponse response = responseContext.getHttpResponse();
 
       boolean keepAlive = HttpUtil.isKeepAlive(req);
@@ -93,9 +99,14 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<HttpObject> {
         response.headers().set(CONNECTION, CLOSE);
       }
 
-      ctx.write(response);
-      ctx.write(responseContext.getFileRegion());
-      ChannelFuture f = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+      ChannelFuture f;
+      if (mUseZeroCopy) {
+        ctx.write(response);
+        ctx.write(responseContext.getFileRegion());
+        f = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+      } else {
+        f = ctx.write(response);
+      }
 
       if (!keepAlive) {
         f.addListener(ChannelFutureListener.CLOSE);
@@ -114,7 +125,7 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<HttpObject> {
     return parametersMap;
   }
 
-  private HttpResponseContext dispatch(HttpRequest httpRequest)
+  private HttpResponseContext dispatch(HttpRequest httpRequest, Channel channel)
       throws PageNotFoundException {
     String requestUri = httpRequest.uri();
     // parse the request uri to get the parameters
@@ -124,7 +135,7 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<HttpObject> {
     // parse the URI and dispatch it to different methods
     switch (requestMapping) {
       case "page":
-        return doGetPage(parametersMap, httpRequest);
+        return doGetPage(parametersMap, httpRequest, channel);
       case "files":
         return doListFiles(parametersMap, httpRequest);
       default:
@@ -134,18 +145,29 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<HttpObject> {
   }
 
   private HttpResponseContext doGetPage(
-      Map<String, String> parametersMap, HttpRequest httpRequest)
+      Map<String, String> parametersMap, HttpRequest httpRequest, Channel channel)
       throws PageNotFoundException {
     String fileId = parametersMap.get("fileId");
     long pageIndex = Long.parseLong(parametersMap.get("pageIndex"));
 
-    FileRegion fileRegion = mPagedService.getPageFileRegion(fileId, pageIndex);
-    HttpResponse response = new DefaultHttpResponse(httpRequest.protocolVersion(), OK);
-    HttpResponseContext httpResponseContext = new HttpResponseContext(response, fileRegion);
-    response.headers()
-        .set(CONTENT_TYPE, TEXT_PLAIN)
-        .setInt(CONTENT_LENGTH, (int) fileRegion.count());
-    return httpResponseContext;
+    if (mUseZeroCopy) {
+      FileRegion fileRegion = mPagedService.getPageFileRegion(fileId, pageIndex);
+      HttpResponse response = new DefaultHttpResponse(httpRequest.protocolVersion(), OK);
+      HttpResponseContext httpResponseContext = new HttpResponseContext(response, fileRegion);
+      response.headers()
+          .set(CONTENT_TYPE, TEXT_PLAIN)
+          .setInt(CONTENT_LENGTH, (int) fileRegion.count());
+      return httpResponseContext;
+    } else {
+      ByteBuf byteBuf = mPagedService.getPage(fileId, pageIndex, channel);
+      FullHttpResponse response = new DefaultFullHttpResponse(httpRequest.protocolVersion(), OK,
+          byteBuf);
+      HttpResponseContext httpResponseContext = new HttpResponseContext(response, null);
+      response.headers()
+          .set(CONTENT_TYPE, TEXT_PLAIN)
+          .setInt(CONTENT_LENGTH, response.content().readableBytes());
+      return httpResponseContext;
+    }
   }
 
   private HttpResponseContext doListFiles(Map<String, String> parametersMap,
